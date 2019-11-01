@@ -1,0 +1,94 @@
+service: demo
+
+provider:
+  name: aws
+  runtime: java8
+  memorySize: 256
+  timeout: 30
+  region: ${opt:region, 'ap-south-1'}
+  stage: ${opt:stage, 'dev'}
+  profile: ${opt:profile, 'pyt-demo'}
+  environment:
+    ID_SIZE: 5
+  iamRoleStatements:
+   - Effect: Allow
+     Action:
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+     Resource:
+        - { "Fn::GetAtt": ["usersDynamoDBTable", "Arn" ] }
+   - Effect: Allow
+     Action:
+        - s3:GetObject
+        - s3:GetObjectAcl
+     Resource: "arn:aws:s3:::${self:custom.bucketName}-${self:provider.stage}/*"
+
+plugins:
+  - serverless-pseudo-parameters
+
+package:
+  artifact: target/demo-dev.jar
+  
+custom:
+  usersTableName: 'user'
+  bucketName: 'user-pyt-demo'
+
+functions:
+  fetchUsers:
+    handler: com.pyt.demo.handler.FetchUsersHandler
+    events:
+      - http:
+          path: /users
+          method: get
+  fetchUser:
+    handler: com.pyt.demo.handler.FetchUserHandler
+    events:
+      - http:
+          path: /users/{userId}
+          method: get
+  createUser:
+    handler: com.pyt.demo.handler.CreateUsersHandler
+    events:
+      - http:
+          path: /users
+          method: post
+  deleteUser:
+    handler: com.pyt.demo.handler.DeleteUserHandler
+    events:
+      - http:
+          path: /users/{userId}
+          method: delete
+  cronUserCreator:
+    handler: com.pyt.demo.handler.CronUserCreatorHandler
+    events:
+      - schedule: rate(5 minutes)
+  S3UserCreatorHandler:
+    handler: com.pyt.demo.handler.S3UserCreatorHandler
+    events:
+      - s3:
+          bucket: ${self:custom.bucketName}-${self:provider.stage}
+          event: s3:ObjectCreated:*
+    description: creates user
+    memorySize: 256
+    timeout: 60
+
+# you can add CloudFormation resource templates here
+resources:
+  Resources:
+    usersDynamoDBTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.usersTableName}
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
